@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Persistent QWebEngineProfile storage id (on-disk cookie jar namespace).
 
-PROFILE_STORAGE_NAME = "cookiebaker"
+PROFILE_STORAGE_NAME = "cookietruck"
 
 
 def as_bytes(x: object) -> bytes:

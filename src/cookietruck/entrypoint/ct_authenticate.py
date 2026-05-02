@@ -18,7 +18,7 @@ import PySide6.QtWidgets
 
 # Package
 
-import cookiebaker.utility
+import cookietruck.utility
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def _configure_logging(verbose: bool) -> None:
 def _http_url_argument(value: str) -> str:
     """``argparse`` ``type=`` hook: accept only normalized http(s) URLs."""
 
-    qurl = cookiebaker.utility.normalize_url(value)
+    qurl = cookietruck.utility.normalize_url(value)
 
     if not qurl.isValid() or qurl.scheme() not in ("http", "https"):
         raise argparse.ArgumentTypeError(f"not a valid http(s) URL: {value!r}")
@@ -70,7 +70,7 @@ def main() -> int:
     # Argument definitions
 
     p = argparse.ArgumentParser(
-        prog="cb_authenticate",
+        prog="ct_authenticate",
         description="Load a URL in Qt WebEngine and print captured cookies as JSON.",
     )
     p.add_argument(
@@ -93,11 +93,11 @@ def main() -> int:
     )
     p.add_argument(
         "--profile",
-        default=cookiebaker.utility.PROFILE_STORAGE_NAME,
+        default=cookietruck.utility.PROFILE_STORAGE_NAME,
         metavar="NAME",
         help=(
             "QWebEngineProfile storage name "
-            f"(default: {cookiebaker.utility.PROFILE_STORAGE_NAME!r})."
+            f"(default: {cookietruck.utility.PROFILE_STORAGE_NAME!r})."
         ),
     )
 
@@ -129,7 +129,7 @@ def main() -> int:
     def on_cookie_added(c: PySide6.QtNetwork.QNetworkCookie) -> None:
         """Merge each emitted cookie into ``cookie_map`` (latest wins per key)."""
 
-        key = cookiebaker.utility.cookie_key(c)
+        key = cookietruck.utility.cookie_key(c)
         cookie_map[key] = PySide6.QtNetwork.QNetworkCookie(c)
         _LOGGER.debug("cookie added: name=%r domain=%r path=%r", key[0], key[1], key[2])
 
@@ -151,7 +151,7 @@ def main() -> int:
 
     container = PySide6.QtWidgets.QWidget()
     container.resize(1100, 720)
-    container.setWindowTitle("cookiebaker")
+    container.setWindowTitle("cookietruck")
 
     layout = PySide6.QtWidgets.QVBoxLayout(container)
     layout.addWidget(view, stretch=1)
@@ -173,8 +173,8 @@ def main() -> int:
         if done["printed"]:
             return
         done["printed"] = True
-        cookies = cookiebaker.utility.settle_then_collect(profile, cookie_map, args.settle_ms)
-        payload = cookiebaker.utility.build_payload(base_url, cookies)
+        cookies = cookietruck.utility.settle_then_collect(profile, cookie_map, args.settle_ms)
+        payload = cookietruck.utility.build_payload(base_url, cookies)
         _LOGGER.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         container.close()

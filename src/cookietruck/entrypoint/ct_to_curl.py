@@ -1,4 +1,4 @@
-"""CLI: convert cb_authenticate session JSON into curl ``-b`` cookie arguments."""
+"""CLI: convert ct_authenticate session JSON into curl ``-b`` cookie arguments."""
 
 # Standard library
 
@@ -14,9 +14,9 @@ def main() -> int:
     # Argument definitions
 
     p = argparse.ArgumentParser(
-        prog="cb_to_curl",
+        prog="ct_to_curl",
         description=(
-            "Read JSON emitted by cb_authenticate from stdin and print curl cookie arguments."
+            "Read JSON emitted by ct_authenticate from stdin and print curl cookie arguments."
         ),
     )
 
@@ -37,7 +37,7 @@ def main() -> int:
     cookie_header = data.get("cookie_header")
 
     if cookie_header is None:
-        print("error: missing cookie_header (not cb_authenticate output?)", file=sys.stderr)
+        print("error: missing cookie_header (not ct_authenticate output?)", file=sys.stderr)
         return 1
 
     if not isinstance(cookie_header, str):

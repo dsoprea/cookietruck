@@ -1,18 +1,19 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61.0", "wheel>=0.43.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cookiebaker"
+name = "cookietruck"
 version = "0.1.0"
 dependencies = ["PySide6>=6.8.0"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+dev = ["build>=1.0.0", "twine>=6.0.0"]
 
 [project.scripts]
-cb_authenticate = "cookiebaker.entrypoint.cb_authenticate:main"
-cb_to_curl = "cookiebaker.entrypoint.cb_to_curl:main"
+ct_authenticate = "cookietruck.entrypoint.ct_authenticate:main"
+ct_to_curl = "cookietruck.entrypoint.ct_to_curl:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
