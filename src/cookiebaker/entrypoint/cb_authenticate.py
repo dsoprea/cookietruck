@@ -1,4 +1,4 @@
-"""CLI: Qt WebEngine cookie capture (mirrors llmcrawler UI capture flow)."""
+"""CLI: Qt WebEngine cookie capture (GUI authenticate-then-export flow)."""
 
 # Standard library
 
@@ -20,7 +20,7 @@ import PySide6.QtWidgets
 
 import cookiebaker.utility
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 # Run inside the loaded document: focus first usable text entry; return whether focus moved.
 
@@ -43,6 +43,7 @@ _FOCUS_FIRST_TEXT_INPUT_JS = (
 
 def _configure_logging(verbose: bool) -> None:
     """Attach stderr logging: WARNING by default, DEBUG when ``verbose`` is True."""
+
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
@@ -52,15 +53,31 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
-def main(argv: typing.List[str] | None = None) -> int:
+def _http_url_argument(value: str) -> str:
+    """``argparse`` ``type=`` hook: accept only normalized http(s) URLs."""
+
+    qurl = cookiebaker.utility.normalize_url(value)
+
+    if not qurl.isValid() or qurl.scheme() not in ("http", "https"):
+        raise argparse.ArgumentTypeError(f"not a valid http(s) URL: {value!r}")
+
+    return qurl.toString()
+
+
+def main() -> int:
     """Parse CLI flags, run Qt WebEngine, print JSON session payload; return process exit code."""
 
     # Argument definitions
 
     p = argparse.ArgumentParser(
+        prog="cb_authenticate",
         description="Load a URL in Qt WebEngine and print captured cookies as JSON.",
     )
-    p.add_argument("url", help="http(s) URL to open")
+    p.add_argument(
+        "url",
+        type=_http_url_argument,
+        help="http(s) URL to open",
+    )
     p.add_argument(
         "--verbose",
         "-v",
@@ -72,7 +89,7 @@ def main(argv: typing.List[str] | None = None) -> int:
         type=int,
         default=800,
         metavar="MS",
-        help="Milliseconds to wait after loadAllCookies (default: 800, same as LLM Crawler UI).",
+        help="Milliseconds to wait after loadAllCookies (default: 800).",
     )
     p.add_argument(
         "--profile",
@@ -86,29 +103,21 @@ def main(argv: typing.List[str] | None = None) -> int:
 
     # Parse and configure logging before any Qt noise
 
-    cli_argv = argv if argv is not None else sys.argv
-    args = p.parse_args(argv)
+    args = p.parse_args()
     _configure_logging(args.verbose)
 
-    # Validate URL
-
-    qurl = cookiebaker.utility.normalize_url(args.url)
-    if not qurl.isValid() or qurl.scheme() not in ("http", "https"):
-        logger.warning("invalid http(s) URL: %r", args.url)
-        print("error: invalid http(s) URL", file=sys.stderr)
-        return 1
-
-    base_url = qurl.toString()
-    logger.debug("normalized URL: %s", base_url)
+    base_url = args.url
+    qurl = PySide6.QtCore.QUrl(base_url)
+    _LOGGER.debug("normalized URL: %s", base_url)
 
     # Qt application + shared GL context (WebEngine requirement)
 
     PySide6.QtWidgets.QApplication.setAttribute(
         PySide6.QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts
     )
-    app = PySide6.QtWidgets.QApplication([cli_argv[0]])
+    app = PySide6.QtWidgets.QApplication([sys.argv[0]])
 
-    # Profile: persistent jar name + no HTTP cache (matches crawler UI)
+    # Profile: named storage + no HTTP cache (typical for cookie-only capture).
 
     cookie_map: typing.Dict[
         typing.Tuple[bytes, bytes, bytes],
@@ -119,9 +128,10 @@ def main(argv: typing.List[str] | None = None) -> int:
 
     def on_cookie_added(c: PySide6.QtNetwork.QNetworkCookie) -> None:
         """Merge each emitted cookie into ``cookie_map`` (latest wins per key)."""
+
         key = cookiebaker.utility.cookie_key(c)
         cookie_map[key] = PySide6.QtNetwork.QNetworkCookie(c)
-        logger.debug("cookie added: name=%r domain=%r path=%r", key[0], key[1], key[2])
+        _LOGGER.debug("cookie added: name=%r domain=%r path=%r", key[0], key[1], key[2])
 
     profile.cookieStore().cookieAdded.connect(on_cookie_added)
 
@@ -137,7 +147,7 @@ def main(argv: typing.List[str] | None = None) -> int:
 
     # Embedded browser plus bottom button (explicit capture, then exit).
 
-    logger.debug("main UI: 1100x720, capture button")
+    _LOGGER.debug("main UI: 1100x720, capture button")
 
     container = PySide6.QtWidgets.QWidget()
     container.resize(1100, 720)
@@ -159,18 +169,20 @@ def main(argv: typing.List[str] | None = None) -> int:
 
     def dump_and_quit() -> None:
         """Collect cookies, print JSON to stdout, close the UI, stop the Qt event loop."""
+
         if done["printed"]:
             return
         done["printed"] = True
         cookies = cookiebaker.utility.settle_then_collect(profile, cookie_map, args.settle_ms)
         payload = cookiebaker.utility.build_payload(base_url, cookies)
-        logger.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
+        _LOGGER.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         container.close()
         app.quit()
 
     def on_capture_clicked() -> None:
         """Disable the button then run the shared capture-and-exit path."""
+
         capture_btn.setEnabled(False)
         dump_and_quit()
 
@@ -182,6 +194,7 @@ def main(argv: typing.List[str] | None = None) -> int:
 
     def apply_initial_focus(ok: bool) -> None:
         """Run focus JS only after a real navigation finishes (not ``about:blank`` placeholders)."""
+
         if focus_state["done"]:
             return
 
@@ -214,11 +227,11 @@ def main(argv: typing.List[str] | None = None) -> int:
             focused = bool(result)
 
             if focused:
-                logger.debug("initial focus: web text control")
+                _LOGGER.debug("initial focus: web text control")
 
                 return
 
-            logger.debug("initial focus: Done button (no web text control)")
+            _LOGGER.debug("initial focus: Done button (no web text control)")
 
             capture_btn.setFocus(PySide6.QtCore.Qt.FocusReason.ActiveWindowReason)
 

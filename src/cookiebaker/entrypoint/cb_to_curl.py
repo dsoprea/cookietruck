@@ -4,37 +4,25 @@
 
 import argparse
 import json
-import pathlib
 import shlex
 import sys
-import typing
 
 
-def main(argv: typing.List[str] | None = None) -> int:
+def main() -> int:
     """Read session JSON and print shell-safe ``curl`` cookie arguments (``-b`` ...)."""
 
     # Argument definitions
 
     p = argparse.ArgumentParser(
+        prog="cb_to_curl",
         description=(
-            "Read JSON emitted by cb_authenticate (stdin or file) and print curl cookie arguments."
+            "Read JSON emitted by cb_authenticate from stdin and print curl cookie arguments."
         ),
     )
-    p.add_argument(
-        "session_file",
-        nargs="?",
-        default="-",
-        help="Path to session JSON; omit or '-' to read stdin.",
-    )
 
-    args = p.parse_args(argv)
+    p.parse_args()
 
-    # Load raw JSON text
-
-    if args.session_file == "-":
-        raw = sys.stdin.read()
-    else:
-        raw = pathlib.Path(args.session_file).read_text(encoding="utf-8")
+    raw = sys.stdin.read()
 
     try:
         data = json.loads(raw)

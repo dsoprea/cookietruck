@@ -12,17 +12,16 @@ import PySide6.QtCore
 import PySide6.QtNetwork
 import PySide6.QtWebEngineCore
 
-# Module logger for debug traces during cookie-store operations.
+_LOGGER = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
+# Persistent QWebEngineProfile storage id (on-disk cookie jar namespace).
 
-# Persistent profile name shared with LLM Crawler UI so on-disk cookie jars behave the same.
-
-PROFILE_STORAGE_NAME = "llm_crawler_ui"
+PROFILE_STORAGE_NAME = "cookiebaker"
 
 
 def as_bytes(x: object) -> bytes:
     """Coerce ``x`` to ``bytes``: UTF-8 for ``str``, otherwise ``bytes(...)``."""
+
     if isinstance(x, str):
         return x.encode("utf-8", errors="replace")
     return bytes(x)
@@ -30,6 +29,7 @@ def as_bytes(x: object) -> bytes:
 
 def normalize_url(text: str) -> PySide6.QtCore.QUrl:
     """Turn user input into an absolute ``QUrl``, defaulting scheme to ``https``."""
+
     text = text.strip()
 
     # Empty input yields an invalid URL so callers can reject early.
@@ -46,6 +46,7 @@ def normalize_url(text: str) -> PySide6.QtCore.QUrl:
 
 def cookie_key(c: PySide6.QtNetwork.QNetworkCookie) -> typing.Tuple[bytes, bytes, bytes]:
     """Stable dict key for deduplicating cookies: ``(name, domain, path)`` as bytes."""
+
     domain = c.domain()
     path = c.path() or "/"
     return (as_bytes(c.name()), as_bytes(domain), as_bytes(path))
@@ -53,6 +54,7 @@ def cookie_key(c: PySide6.QtNetwork.QNetworkCookie) -> typing.Tuple[bytes, bytes
 
 def same_site_name(c: PySide6.QtNetwork.QNetworkCookie) -> str | None:
     """Map Qt same-site policy to JSON string values; ``None`` omits the field."""
+
     policy = c.sameSitePolicy()
     if policy == PySide6.QtNetwork.QNetworkCookie.SameSite.Default:
         return None
@@ -70,11 +72,12 @@ def same_site_name(c: PySide6.QtNetwork.QNetworkCookie) -> str | None:
 
 def cookies_as_records(cookies: typing.Iterable[PySide6.QtNetwork.QNetworkCookie]) -> typing.List[dict]:
     """Serialize cookies to sorted JSON-friendly dict rows (name, domain, flags, etc.)."""
+
     rows: typing.List[dict] = []
     for c in cookies:
         exp = c.expirationDate()
 
-        # Core attributes always emitted for LLM / HTTP tooling consumption.
+        # Core attributes always emitted for HTTP tooling / export consumers.
 
         row = {
             "name": as_bytes(c.name()).decode("utf-8", errors="replace"),
@@ -99,6 +102,7 @@ def cookies_as_records(cookies: typing.Iterable[PySide6.QtNetwork.QNetworkCookie
 
 def _domain_matches(host: str, cookie_domain: str) -> bool:
     """Return True if ``host`` is covered by ``cookie_domain`` (with leading-dot rule)."""
+
     host = host.lower()
     cd = cookie_domain.lstrip(".").lower()
     return host == cd or host.endswith("." + cd)
@@ -106,6 +110,7 @@ def _domain_matches(host: str, cookie_domain: str) -> bool:
 
 def _path_matches(request_path: str, cookie_path: str) -> bool:
     """RFC-style path matching: prefix match with boundary at ``/``."""
+
     if not request_path.startswith("/"):
         request_path = "/" + request_path
     cp = cookie_path or "/"
@@ -129,13 +134,12 @@ def cookie_header_for_url(
     url: PySide6.QtCore.QUrl,
 ) -> str:
     """Build a ``Cookie`` header value for ``url`` from in-memory cookies (browser-style filter)."""
+
     host = url.host()
+
+    # Path-only matching: query is not part of the cookie ``Path`` attribute (RFC 6265).
+
     path = url.path() or "/"
-
-    # Include query in the synthetic path string when matching, mirroring typical client behavior.
-
-    if url.hasQuery():
-        path = f"{path}?{url.query()}"
     parts: typing.List[str] = []
     for c in cookies:
         dom = (c.domain() or "").strip()
@@ -163,25 +167,27 @@ def settle_then_collect(
     settle_ms: int,
 ) -> typing.List[PySide6.QtNetwork.QNetworkCookie]:
     """Flush persistence via ``loadAllCookies``, wait ``settle_ms``, return live cookie list."""
+
     store = profile.cookieStore()
-    logger.debug("cookie store loadAllCookies + settle %d ms", settle_ms)
+    _LOGGER.debug("cookie store loadAllCookies + settle %d ms", settle_ms)
 
     # Pull disk-backed cookies into the store; completion is asynchronous.
 
     store.loadAllCookies()
 
-    # Block the GUI thread briefly so async cookie ops can finish (matches LLM Crawler UI).
+    # Block the GUI thread briefly so async cookie ops can finish.
 
     loop = PySide6.QtCore.QEventLoop()
     PySide6.QtCore.QTimer.singleShot(settle_ms, loop.quit)
     loop.exec()
     cookies = list(cookie_map.values())
-    logger.debug("collected %d QNetworkCookie instances", len(cookies))
+    _LOGGER.debug("collected %d QNetworkCookie instances", len(cookies))
     return cookies
 
 
 def build_payload(base_url: str, cookies: typing.List[PySide6.QtNetwork.QNetworkCookie]) -> dict:
-    """Assemble the session JSON object written by LLM Crawler UI's ``save_session`` shape."""
+    """Assemble the session JSON object (schema: base_url, cookie_header, cookies, …)."""
+
     qurl = PySide6.QtCore.QUrl(base_url)
     return {
         "schema_version": 1,

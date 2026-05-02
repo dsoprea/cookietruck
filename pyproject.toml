@@ -7,9 +7,16 @@ name = "cookiebaker"
 version = "0.1.0"
 dependencies = ["PySide6>=6.8.0"]
 
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
 [project.scripts]
-cb_authenticate = "cookiebaker.entrypoint.cb:main"
+cb_authenticate = "cookiebaker.entrypoint.cb_authenticate:main"
 cb_to_curl = "cookiebaker.entrypoint.cb_to_curl:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
