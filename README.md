@@ -1,3 +1,6 @@
+[![PyPI](https://img.shields.io/pypi/v/cookietruck)](https://pypi.org/project/cookietruck/)
+[![Python](https://img.shields.io/pypi/pyversions/cookietruck)](https://pypi.org/project/cookietruck/)
+
 # Overview
 
 Small toolkit for capturing and dumping browser cookies via an embedded browser and then being able to use them from cURL or any way you see fit.
