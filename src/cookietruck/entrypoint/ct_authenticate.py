@@ -115,11 +115,18 @@ def main() -> int:
         action="store_true",
         help="Print captured cookies as a curl Netscape cookiejar instead of JSON.",
     )
-    p.add_argument(
+    seed_group = p.add_mutually_exclusive_group()
+    seed_group.add_argument(
         "--json-cookies-filepath",
         metavar="PATH",
         default=None,
         help="JSON file from a prior ct_authenticate run; cookies are seeded before navigation.",
+    )
+    seed_group.add_argument(
+        "--curl-cookies-filepath",
+        metavar="PATH",
+        default=None,
+        help="curl Netscape cookiejar file; cookies are seeded before navigation.",
     )
 
     # Parse and configure logging before any Qt noise
@@ -132,6 +139,7 @@ def main() -> int:
     _LOGGER.debug("normalized URL: %s", base_url)
 
     seed_payload = None
+    seed_cookies = None
 
     if args.json_cookies_filepath is not None:
         try:
@@ -149,6 +157,15 @@ def main() -> int:
                     cli_url=base_url,
                 )
             _LOGGER.debug(message)
+
+    if args.curl_cookies_filepath is not None:
+        try:
+            seed_cookies = cookietruck.utility.load_cookies_from_curl_cookiejar_file(
+                args.curl_cookies_filepath)
+        except ValueError as error:
+            print("error: {message}".format(message=error), file=sys.stderr)
+
+            return 1
 
     # Qt application + shared GL context (WebEngine requirement)
 
@@ -180,6 +197,13 @@ def main() -> int:
             profile,
             cookie_map,
             seed_payload,
+            args.settle_ms,
+        )
+    elif seed_cookies is not None:
+        cookietruck.utility.seed_cookie_store_from_cookies(
+            profile,
+            cookie_map,
+            seed_cookies,
             args.settle_ms,
         )
 

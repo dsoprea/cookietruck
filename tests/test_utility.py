@@ -2,6 +2,7 @@
 
 import datetime
 import io
+import json
 
 # Third-party / package
 
@@ -211,4 +212,67 @@ def test_is_binary_cookiejar_payload_tab_in_value() -> None:
     c = cookie(b"a", b"x\ty", "example.com")
 
     assert cookietruck.utility.are_cookies_binary_for_cookiejar([c]) is True
+
+
+def test_load_cookies_from_curl_cookiejar_file_roundtrip(tmp_path: pytest.TempPathFactory) -> None:
+    original = cookie(b"session", b"abc123", ".example.com", "/api", secure=True, http_only=True)
+    expiration = PySide6.QtCore.QDateTime.fromSecsSinceEpoch(
+        1_700_000_000,
+        PySide6.QtCore.Qt.TimeSpec.UTC,
+    )
+    original.setExpirationDate(expiration)
+    payload = cookietruck.utility.build_curl_cookiejar([original])
+    cookiejar_path = str(tmp_path) + "/cookies.txt"
+
+    with open(cookiejar_path, "wb") as handle:
+        handle.write(payload)
+
+    loaded = cookietruck.utility.load_cookies_from_curl_cookiejar_file(cookiejar_path)
+
+    assert len(loaded) == 1
+    loaded_cookie = loaded[0]
+    assert cookietruck.utility.cookie_key(original) == cookietruck.utility.cookie_key(loaded_cookie)
+    assert loaded_cookie.isSecure() is True
+    assert loaded_cookie.isHttpOnly() is True
+    assert loaded_cookie.expirationDate().toSecsSinceEpoch() == 1_700_000_000
+
+
+def test_load_cookies_from_curl_cookiejar_file_missing(tmp_path: pytest.TempPathFactory) -> None:
+    missing_path = str(tmp_path) + "/missing.txt"
+
+    with pytest.raises(ValueError, match="not found"):
+        cookietruck.utility.load_cookies_from_curl_cookiejar_file(missing_path)
+
+
+def test_load_cookies_from_curl_cookiejar_file_bad_line(tmp_path: pytest.TempPathFactory) -> None:
+    cookiejar_path = str(tmp_path) + "/bad.txt"
+
+    with open(cookiejar_path, "w", encoding="utf-8") as handle:
+        handle.write("example.com\tTRUE\t/\tFALSE\t0\tsession\n")
+
+    with pytest.raises(ValueError, match="expected 7 tab-separated fields"):
+        cookietruck.utility.load_cookies_from_curl_cookiejar_file(cookiejar_path)
+
+
+def test_load_session_payload_from_json_file_roundtrip(tmp_path: pytest.TempPathFactory) -> None:
+    original = cookie(b"n", b"v", "example.com", same_site=PySide6.QtNetwork.QNetworkCookie.SameSite.Lax)
+    payload = cookietruck.utility.build_payload("https://example.com/", [original])
+    json_path = str(tmp_path) + "/session.json"
+
+    with open(json_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    loaded = cookietruck.utility.load_session_payload_from_json_file(json_path)
+
+    assert loaded["schema_version"] == 1
+    assert len(loaded["cookies"]) == 1
+    rebuilt = cookietruck.utility.build_cookie_from_record(loaded["cookies"][0])
+    assert cookietruck.utility.cookie_key(original) == cookietruck.utility.cookie_key(rebuilt)
+
+
+def test_load_session_payload_from_json_file_missing(tmp_path: pytest.TempPathFactory) -> None:
+    missing_path = str(tmp_path) + "/missing.json"
+
+    with pytest.raises(ValueError, match="not found"):
+        cookietruck.utility.load_session_payload_from_json_file(missing_path)
 

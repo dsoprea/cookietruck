@@ -459,16 +459,16 @@ def build_cookie_from_record(record: dict) -> PySide6.QtNetwork.QNetworkCookie:
     return cookie_object
 
 
-def build_origin_url_for_cookie_record(record: dict) -> PySide6.QtCore.QUrl:
-    """Derive the ``setCookie`` origin URL for one exported cookie row."""
+def build_origin_url_for_cookie(cookie_object: PySide6.QtNetwork.QNetworkCookie) -> PySide6.QtCore.QUrl:
+    """Derive the ``setCookie`` origin URL for one ``QNetworkCookie``."""
 
-    if record["secure"]:
+    if cookie_object.isSecure():
         scheme = "https"
     else:
         scheme = "http"
 
-    host = record["domain"].lstrip(".")
-    path = record["path"] or "/"
+    host = (cookie_object.domain() or "").lstrip(".")
+    path = cookie_object.path() or "/"
 
     if not path.startswith("/"):
         path = "/" + path
@@ -478,25 +478,122 @@ def build_origin_url_for_cookie_record(record: dict) -> PySide6.QtCore.QUrl:
     return PySide6.QtCore.QUrl(url_text)
 
 
-def seed_cookie_store_from_payload(
+def build_origin_url_for_cookie_record(record: dict) -> PySide6.QtCore.QUrl:
+    """Derive the ``setCookie`` origin URL for one exported cookie row."""
+
+    cookie_object = build_cookie_from_record(record)
+
+    return build_origin_url_for_cookie(cookie_object)
+
+
+def _build_cookie_from_curl_cookiejar_line(line: str, line_number: int) -> PySide6.QtNetwork.QNetworkCookie:
+    """Parse one Netscape cookiejar data line into a ``QNetworkCookie``."""
+
+    fields = line.split("\t")
+
+    if len(fields) != 7:
+        message = "cookiejar line {line_number}: expected 7 tab-separated fields".format(
+            line_number=line_number,
+        )
+        raise ValueError(message)
+
+    domain_field = fields[0]
+    path = fields[2]
+    secure_field = fields[3]
+    expiry_field = fields[4]
+    name = fields[5]
+    value = fields[6]
+
+    http_only = False
+    domain = domain_field
+    http_only_prefix = "#HttpOnly_"
+
+    if domain.startswith(http_only_prefix):
+        http_only = True
+        domain = domain[len(http_only_prefix):]
+
+    if secure_field == "TRUE":
+        secure = True
+    elif secure_field == "FALSE":
+        secure = False
+    else:
+        message = \
+            "cookiejar line {line_number}: secure must be TRUE or FALSE".format(
+                line_number=line_number,
+            )
+        raise ValueError(message)
+
+    cookie_object = PySide6.QtNetwork.QNetworkCookie()
+    cookie_object.setName(as_bytes(name))
+    cookie_object.setValue(as_bytes(value))
+    cookie_object.setDomain(domain)
+    cookie_object.setPath(path or "/")
+    cookie_object.setSecure(secure)
+    cookie_object.setHttpOnly(http_only)
+
+    if expiry_field != "0":
+        try:
+            expiry_seconds = int(expiry_field)
+        except ValueError as error:
+            message = \
+                "cookiejar line {line_number}: expiry must be an integer".format(
+                    line_number=line_number,
+                )
+            raise ValueError(message) from error
+
+        expiration = PySide6.QtCore.QDateTime.fromSecsSinceEpoch(
+            expiry_seconds,
+            PySide6.QtCore.Qt.TimeSpec.UTC,
+        )
+        cookie_object.setExpirationDate(expiration)
+
+    return cookie_object
+
+
+def load_cookies_from_curl_cookiejar_file(filepath: str) -> typing.List[PySide6.QtNetwork.QNetworkCookie]:
+    """Read cookies from a curl Netscape cookiejar file."""
+
+    if not os.path.isfile(filepath):
+        message = "curl cookiejar file not found: {path!r}".format(path=filepath)
+        raise ValueError(message)
+
+    cookies: typing.List[PySide6.QtNetwork.QNetworkCookie] = []
+
+    with open(filepath, encoding="utf-8") as handle:
+        line_number = 0
+
+        for line in handle:
+            line_number = line_number + 1
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            if stripped.startswith("#") and not stripped.startswith("#HttpOnly_"):
+                continue
+
+            cookie_object = _build_cookie_from_curl_cookiejar_line(line.rstrip("\n"), line_number)
+            cookies.append(cookie_object)
+
+    return cookies
+
+
+def seed_cookie_store_from_cookies(
     profile: PySide6.QtWebEngineCore.QWebEngineProfile,
     cookie_map: typing.Dict[typing.Tuple[bytes, bytes, bytes], PySide6.QtNetwork.QNetworkCookie],
-    payload: dict,
+    cookies: typing.Iterable[PySide6.QtNetwork.QNetworkCookie],
     settle_ms: int,
 ) -> None:
-    """Inject exported cookies into ``profile`` and pre-populate ``cookie_map``."""
-
-    _validate_session_payload(payload)
+    """Inject cookies into ``profile`` and pre-populate ``cookie_map``."""
 
     store = profile.cookieStore()
-    cookies = payload["cookies"]
-    _LOGGER.debug("seeding cookie store from %d exported records", len(cookies))
+    cookie_list = list(cookies)
+    _LOGGER.debug("seeding cookie store from %d cookies", len(cookie_list))
 
-    for record in cookies:
-        cookie_object = build_cookie_from_record(record)
+    for cookie_object in cookie_list:
         key = cookie_key(cookie_object)
         cookie_map[key] = PySide6.QtNetwork.QNetworkCookie(cookie_object)
-        origin = build_origin_url_for_cookie_record(record)
+        origin = build_origin_url_for_cookie(cookie_object)
         store.setCookie(cookie_object, origin)
 
     # Block briefly so async setCookie / cookieAdded can finish before navigation.
@@ -504,3 +601,22 @@ def seed_cookie_store_from_payload(
     loop = PySide6.QtCore.QEventLoop()
     PySide6.QtCore.QTimer.singleShot(settle_ms, loop.quit)
     loop.exec()
+
+
+def seed_cookie_store_from_payload(
+    profile: PySide6.QtWebEngineCore.QWebEngineProfile,
+    cookie_map: typing.Dict[typing.Tuple[bytes, bytes, bytes], PySide6.QtNetwork.QNetworkCookie],
+    payload: dict,
+    settle_ms: int,
+) -> None:
+    """Inject exported JSON session cookies into ``profile`` and pre-populate ``cookie_map``."""
+
+    _validate_session_payload(payload)
+
+    records = payload["cookies"]
+    cookies = []
+
+    for record in records:
+        cookies.append(build_cookie_from_record(record))
+
+    seed_cookie_store_from_cookies(profile, cookie_map, cookies, settle_ms)
