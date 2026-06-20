@@ -151,7 +151,20 @@ def main() -> int:
 
     container = PySide6.QtWidgets.QWidget()
     container.resize(1100, 720)
-    container.setWindowTitle("cookietruck")
+    container.setWindowTitle("cookietruck — {url}".format(url=base_url))
+
+    def update_window_title_from_view(url: PySide6.QtCore.QUrl) -> None:
+        """Keep the window title in sync with the active page URL (skip WebEngine placeholders)."""
+
+        if url.scheme() == "about":
+            path_lower = url.path().lower()
+
+            if path_lower in ("blank", "srcdoc"):
+                return
+
+        container.setWindowTitle("cookietruck — {url}".format(url=url.toString()))
+
+    view.urlChanged.connect(update_window_title_from_view)
 
     layout = PySide6.QtWidgets.QVBoxLayout(container)
     layout.addWidget(view, stretch=1)
@@ -177,7 +190,18 @@ def main() -> int:
         payload = cookietruck.utility.build_payload(base_url, cookies)
         _LOGGER.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
         print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+        # WebEngine requires pages to be gone before their profile is released.
+
+        profile.cookieStore().cookieAdded.disconnect(on_cookie_added)
+        page.loadFinished.disconnect(apply_initial_focus)
+        view.urlChanged.disconnect(update_window_title_from_view)
+        capture_btn.clicked.disconnect(on_capture_clicked)
+        view.setPage(None)
+        page.deleteLater()
+        view.deleteLater()
         container.close()
+        PySide6.QtCore.QCoreApplication.processEvents()
         app.quit()
 
     def on_capture_clicked() -> None:
