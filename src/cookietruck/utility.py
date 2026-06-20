@@ -3,7 +3,9 @@
 # Standard library
 
 import datetime
+import json
 import logging
+import os
 import typing
 
 # Qt (PySide6)
@@ -309,3 +311,196 @@ def build_payload(base_url: str, cookies: typing.List[PySide6.QtNetwork.QNetwork
         "cookie_header": cookie_header_for_url(cookies, qurl),
         "cookies": cookies_as_records(cookies),
     }
+
+
+def _validate_cookie_record(record: object, index: int) -> None:
+    """Raise ``ValueError`` when ``record`` is not a valid session cookie row."""
+
+    if not isinstance(record, dict):
+        message = "cookies[{index}] must be an object".format(index=index)
+        raise ValueError(message)
+
+    required_strings = ("name", "value", "domain", "path")
+    for field_name in required_strings:
+        if field_name not in record:
+            message = "cookies[{index}] missing {field_name!r}".format(
+                index=index,
+                field_name=field_name,
+            )
+            raise ValueError(message)
+
+        if not isinstance(record[field_name], str):
+            message = "cookies[{index}].{field_name} must be a string".format(
+                index=index,
+                field_name=field_name,
+            )
+            raise ValueError(message)
+
+    required_booleans = ("secure", "httpOnly")
+    for field_name in required_booleans:
+        if field_name not in record:
+            message = "cookies[{index}] missing {field_name!r}".format(
+                index=index,
+                field_name=field_name,
+            )
+            raise ValueError(message)
+
+        if not isinstance(record[field_name], bool):
+            message = "cookies[{index}].{field_name} must be a boolean".format(
+                index=index,
+                field_name=field_name,
+            )
+            raise ValueError(message)
+
+    if "sameSite" in record:
+        same_site = record["sameSite"]
+
+        if not isinstance(same_site, str):
+            message = "cookies[{index}].sameSite must be a string".format(index=index)
+            raise ValueError(message)
+
+        if same_site not in ("None", "Lax", "Strict"):
+            message = "cookies[{index}].sameSite must be None, Lax, or Strict".format(index=index)
+            raise ValueError(message)
+
+    if "expires" in record:
+        expires = record["expires"]
+
+        if not isinstance(expires, str):
+            message = "cookies[{index}].expires must be a string".format(index=index)
+            raise ValueError(message)
+
+        expiration = PySide6.QtCore.QDateTime.fromString(
+            expires,
+            PySide6.QtCore.Qt.DateFormat.ISODateWithMs,
+        )
+
+        if not expiration.isValid():
+            message = "cookies[{index}].expires is not a valid ISO datetime".format(index=index)
+            raise ValueError(message)
+
+
+def _validate_session_payload(payload: object) -> None:
+    """Raise ``ValueError`` when ``payload`` is not ct_authenticate session JSON."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("session JSON must be an object")
+
+    if "schema_version" in payload:
+        schema_version = payload["schema_version"]
+
+        if schema_version != 1:
+            message = "unsupported schema_version: {version!r}".format(version=schema_version)
+            raise ValueError(message)
+
+    if "cookies" not in payload:
+        raise ValueError("missing cookies (not ct_authenticate output?)")
+
+    cookies = payload["cookies"]
+
+    if not isinstance(cookies, list):
+        raise ValueError("cookies must be a list")
+
+    index = 0
+    for record in cookies:
+        _validate_cookie_record(record, index)
+        index = index + 1
+
+
+def load_session_payload_from_json_file(filepath: str) -> dict:
+    """Read and validate session JSON from a prior ``ct_authenticate`` run."""
+
+    if not os.path.isfile(filepath):
+        message = "session JSON file not found: {path!r}".format(path=filepath)
+        raise ValueError(message)
+
+    with open(filepath, encoding="utf-8") as handle:
+        try:
+            payload = json.load(handle)
+        except json.JSONDecodeError as error:
+            message = "invalid JSON in session file: {error}".format(error=error)
+            raise ValueError(message) from error
+
+    _validate_session_payload(payload)
+
+    return payload
+
+
+def build_cookie_from_record(record: dict) -> PySide6.QtNetwork.QNetworkCookie:
+    """Build a ``QNetworkCookie`` from one ``cookies_as_records`` JSON row."""
+
+    _validate_cookie_record(record, 0)
+
+    cookie_object = PySide6.QtNetwork.QNetworkCookie()
+    cookie_object.setName(as_bytes(record["name"]))
+    cookie_object.setValue(as_bytes(record["value"]))
+    cookie_object.setDomain(record["domain"])
+    cookie_object.setPath(record["path"])
+    cookie_object.setSecure(record["secure"])
+    cookie_object.setHttpOnly(record["httpOnly"])
+
+    if "sameSite" in record:
+        same_site = record["sameSite"]
+
+        if same_site == "None":
+            cookie_object.setSameSitePolicy(PySide6.QtNetwork.QNetworkCookie.SameSite.None_)
+        elif same_site == "Lax":
+            cookie_object.setSameSitePolicy(PySide6.QtNetwork.QNetworkCookie.SameSite.Lax)
+        else:
+            cookie_object.setSameSitePolicy(PySide6.QtNetwork.QNetworkCookie.SameSite.Strict)
+
+    if "expires" in record:
+        expiration = PySide6.QtCore.QDateTime.fromString(
+            record["expires"],
+            PySide6.QtCore.Qt.DateFormat.ISODateWithMs,
+        )
+        cookie_object.setExpirationDate(expiration)
+
+    return cookie_object
+
+
+def build_origin_url_for_cookie_record(record: dict) -> PySide6.QtCore.QUrl:
+    """Derive the ``setCookie`` origin URL for one exported cookie row."""
+
+    if record["secure"]:
+        scheme = "https"
+    else:
+        scheme = "http"
+
+    host = record["domain"].lstrip(".")
+    path = record["path"] or "/"
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    url_text = "{scheme}://{host}{path}".format(scheme=scheme, host=host, path=path)
+
+    return PySide6.QtCore.QUrl(url_text)
+
+
+def seed_cookie_store_from_payload(
+    profile: PySide6.QtWebEngineCore.QWebEngineProfile,
+    cookie_map: typing.Dict[typing.Tuple[bytes, bytes, bytes], PySide6.QtNetwork.QNetworkCookie],
+    payload: dict,
+    settle_ms: int,
+) -> None:
+    """Inject exported cookies into ``profile`` and pre-populate ``cookie_map``."""
+
+    _validate_session_payload(payload)
+
+    store = profile.cookieStore()
+    cookies = payload["cookies"]
+    _LOGGER.debug("seeding cookie store from %d exported records", len(cookies))
+
+    for record in cookies:
+        cookie_object = build_cookie_from_record(record)
+        key = cookie_key(cookie_object)
+        cookie_map[key] = PySide6.QtNetwork.QNetworkCookie(cookie_object)
+        origin = build_origin_url_for_cookie_record(record)
+        store.setCookie(cookie_object, origin)
+
+    # Block briefly so async setCookie / cookieAdded can finish before navigation.
+
+    loop = PySide6.QtCore.QEventLoop()
+    PySide6.QtCore.QTimer.singleShot(settle_ms, loop.quit)
+    loop.exec()

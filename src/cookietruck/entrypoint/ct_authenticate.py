@@ -115,6 +115,12 @@ def main() -> int:
         action="store_true",
         help="Print captured cookies as a curl Netscape cookiejar instead of JSON.",
     )
+    p.add_argument(
+        "--json-cookies-filepath",
+        metavar="PATH",
+        default=None,
+        help="JSON file from a prior ct_authenticate run; cookies are seeded before navigation.",
+    )
 
     # Parse and configure logging before any Qt noise
 
@@ -124,6 +130,25 @@ def main() -> int:
     base_url = args.url
     qurl = PySide6.QtCore.QUrl(base_url)
     _LOGGER.debug("normalized URL: %s", base_url)
+
+    seed_payload = None
+
+    if args.json_cookies_filepath is not None:
+        try:
+            seed_payload = cookietruck.utility.load_session_payload_from_json_file(
+                args.json_cookies_filepath)
+        except ValueError as error:
+            print("error: {message}".format(message=error), file=sys.stderr)
+
+            return 1
+
+        if args.verbose and "base_url" in seed_payload and seed_payload["base_url"] != base_url:
+            message = \
+                "seed file base_url {seed_url!r} differs from CLI url {cli_url!r}".format(
+                    seed_url=seed_payload["base_url"],
+                    cli_url=base_url,
+                )
+            _LOGGER.debug(message)
 
     # Qt application + shared GL context (WebEngine requirement)
 
@@ -149,6 +174,14 @@ def main() -> int:
         _LOGGER.debug("cookie added: name=%r domain=%r path=%r", key[0], key[1], key[2])
 
     profile.cookieStore().cookieAdded.connect(on_cookie_added)
+
+    if seed_payload is not None:
+        cookietruck.utility.seed_cookie_store_from_payload(
+            profile,
+            cookie_map,
+            seed_payload,
+            args.settle_ms,
+        )
 
     # Browser chrome
 
