@@ -145,9 +145,9 @@ def main() -> int:
 
     done = {"printed": False}
 
-    # Embedded browser plus bottom button (explicit capture, then exit).
+    # Embedded browser plus bottom buttons (copy URL, explicit capture, then exit).
 
-    _LOGGER.debug("main UI: 1100x720, capture button")
+    _LOGGER.debug("main UI: 1100x720, Copy URL and Quit and Dump Cookies buttons")
 
     container = PySide6.QtWidgets.QWidget()
     container.resize(1100, 720)
@@ -169,13 +169,15 @@ def main() -> int:
     layout = PySide6.QtWidgets.QVBoxLayout(container)
     layout.addWidget(view, stretch=1)
 
-    capture_btn = PySide6.QtWidgets.QPushButton("Done")
+    copy_url_btn = PySide6.QtWidgets.QPushButton("Copy URL")
+    capture_btn = PySide6.QtWidgets.QPushButton("Quit and Dump Cookies")
     capture_btn.setDefault(True)
 
     btn_row = PySide6.QtWidgets.QHBoxLayout()
     btn_row.setContentsMargins(0, 20, 0, 20)
 
     btn_row.addStretch(1)
+    btn_row.addWidget(copy_url_btn)
     btn_row.addWidget(capture_btn)
     btn_row.addStretch(1)
     layout.addLayout(btn_row)
@@ -196,6 +198,7 @@ def main() -> int:
         profile.cookieStore().cookieAdded.disconnect(on_cookie_added)
         page.loadFinished.disconnect(apply_initial_focus)
         view.urlChanged.disconnect(update_window_title_from_view)
+        copy_url_btn.clicked.disconnect(on_copy_url_clicked)
         capture_btn.clicked.disconnect(on_capture_clicked)
         view.setPage(None)
         page.deleteLater()
@@ -204,15 +207,24 @@ def main() -> int:
         PySide6.QtCore.QCoreApplication.processEvents()
         app.quit()
 
+    def on_copy_url_clicked() -> None:
+        """Copy the live WebEngine page URL to the system clipboard."""
+
+        current_url = page.url().toString()
+        app.clipboard().setText(current_url)
+        message = "copied URL to clipboard: {url}".format(url=current_url)
+        _LOGGER.debug(message)
+
     def on_capture_clicked() -> None:
         """Disable the button then run the shared capture-and-exit path."""
 
         capture_btn.setEnabled(False)
         dump_and_quit()
 
+    copy_url_btn.clicked.connect(on_copy_url_clicked)
     capture_btn.clicked.connect(on_capture_clicked)
 
-    # Prefer keyboard focus on the page's first text control; otherwise the Done button.
+    # Prefer keyboard focus on the page's first text control; otherwise the quit button.
 
     focus_state = {"done": False, "pending": False}
 
@@ -255,7 +267,7 @@ def main() -> int:
 
                 return
 
-            _LOGGER.debug("initial focus: Done button (no web text control)")
+            _LOGGER.debug("initial focus: Quit and Dump Cookies button (no web text control)")
 
             capture_btn.setFocus(PySide6.QtCore.Qt.FocusReason.ActiveWindowFocusReason)
 
