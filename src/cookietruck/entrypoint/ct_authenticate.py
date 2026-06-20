@@ -198,6 +198,43 @@ def main() -> int:
     btn_row.addStretch(1)
     layout.addLayout(btn_row)
 
+    copy_overlay = PySide6.QtWidgets.QLabel(container)
+    copy_overlay.setText("Copied to clipboard")
+    copy_overlay.setAlignment(PySide6.QtCore.Qt.AlignmentFlag.AlignCenter)
+    copy_overlay.setStyleSheet(
+        "QLabel {"
+        "  background-color: rgba(0, 0, 0, 180);"
+        "  color: white;"
+        "  padding: 12px 24px;"
+        "  border-radius: 8px;"
+        "  font-size: 14px;"
+        "}"
+    )
+    copy_overlay.setAttribute(PySide6.QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    copy_overlay.hide()
+
+    copy_overlay_hide_timer = PySide6.QtCore.QTimer()
+    copy_overlay_hide_timer.setSingleShot(True)
+    copy_overlay_hide_timer.timeout.connect(copy_overlay.hide)
+
+    def show_copy_overlay() -> None:
+        """Center a short-lived toast over the window after copying the URL."""
+
+        copy_overlay.adjustSize()
+        horizontal = (container.width() - copy_overlay.width()) // 2
+        vertical = (container.height() - copy_overlay.height()) // 2
+
+        if horizontal < 0:
+            horizontal = 0
+
+        if vertical < 0:
+            vertical = 0
+
+        copy_overlay.move(horizontal, vertical)
+        copy_overlay.show()
+        copy_overlay.raise_()
+        copy_overlay_hide_timer.start(1800)
+
     def dump_and_quit() -> None:
         """Collect cookies, print session output to stdout, close the UI, stop the Qt event loop."""
 
@@ -245,6 +282,7 @@ def main() -> int:
         app.clipboard().setText(current_url)
         message = "copied URL to clipboard: {url}".format(url=current_url)
         _LOGGER.debug(message)
+        show_copy_overlay()
 
     def on_capture_clicked() -> None:
         """Disable the button then run the shared capture-and-exit path."""
