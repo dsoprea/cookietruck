@@ -107,16 +107,7 @@ def main() -> int:
         type=int,
         default=800,
         metavar="MS",
-        help="Milliseconds to wait after loadAllCookies (default: 800).",
-    )
-    p.add_argument(
-        "--profile",
-        default=cookietruck.utility.PROFILE_STORAGE_NAME,
-        metavar="NAME",
-        help=(
-            "QWebEngineProfile storage name "
-            "(default: {name!r}).".format(name=cookietruck.utility.PROFILE_STORAGE_NAME)
-        ),
+        help="Milliseconds to wait before collecting cookies (default: 800).",
     )
     p.add_argument(
         "--as-curl-cookiejar",
@@ -141,13 +132,13 @@ def main() -> int:
     )
     app = PySide6.QtWidgets.QApplication([sys.argv[0]])
 
-    # Profile: named storage + no HTTP cache (typical for cookie-only capture).
+    # Profile: off-the-record session (no on-disk cookie jar) + no HTTP cache.
 
     cookie_map: typing.Dict[
         typing.Tuple[bytes, bytes, bytes],
         PySide6.QtNetwork.QNetworkCookie,
     ] = {}
-    profile = PySide6.QtWebEngineCore.QWebEngineProfile(args.profile)
+    profile = PySide6.QtWebEngineCore.QWebEngineProfile()
     profile.setHttpCacheType(PySide6.QtWebEngineCore.QWebEngineProfile.HttpCacheType.NoCache)
 
     def on_cookie_added(c: PySide6.QtNetwork.QNetworkCookie) -> None:
@@ -213,7 +204,7 @@ def main() -> int:
         if done["printed"]:
             return
         done["printed"] = True
-        cookies = cookietruck.utility.settle_then_collect(profile, cookie_map, args.settle_ms)
+        cookies = cookietruck.utility.settle_then_collect(cookie_map, args.settle_ms)
 
         if args.as_curl_cookiejar:
             if cookietruck.utility.are_cookies_binary_for_cookiejar(cookies) and sys.stdout.isatty():

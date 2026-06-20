@@ -14,10 +14,6 @@ import PySide6.QtWebEngineCore
 
 _LOGGER = logging.getLogger(__name__)
 
-# Persistent QWebEngineProfile storage id (on-disk cookie jar namespace).
-
-PROFILE_STORAGE_NAME = "cookietruck"
-
 _CURL_COOKIEJAR_HEADER = \
     "# Netscape HTTP Cookie File\n" \
     "# https://curl.se/docs/http-cookies.html\n" \
@@ -284,18 +280,12 @@ def cookie_header_for_url(
 
 
 def settle_then_collect(
-    profile: PySide6.QtWebEngineCore.QWebEngineProfile,
     cookie_map: typing.Dict[typing.Tuple[bytes, bytes, bytes], PySide6.QtNetwork.QNetworkCookie],
     settle_ms: int,
 ) -> typing.List[PySide6.QtNetwork.QNetworkCookie]:
-    """Flush persistence via ``loadAllCookies``, wait ``settle_ms``, return live cookie list."""
+    """Wait ``settle_ms`` so async cookie ops can finish, then return the in-memory cookie list."""
 
-    store = profile.cookieStore()
-    _LOGGER.debug("cookie store loadAllCookies + settle %d ms", settle_ms)
-
-    # Pull disk-backed cookies into the store; completion is asynchronous.
-
-    store.loadAllCookies()
+    _LOGGER.debug("cookie settle %d ms before collect", settle_ms)
 
     # Block the GUI thread briefly so async cookie ops can finish.
 
@@ -304,6 +294,7 @@ def settle_then_collect(
     loop.exec()
     cookies = list(cookie_map.values())
     _LOGGER.debug("collected %d QNetworkCookie instances", len(cookies))
+
     return cookies
 
 
