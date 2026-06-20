@@ -59,19 +59,37 @@ def _http_url_argument(value: str) -> str:
     qurl = cookietruck.utility.normalize_url(value)
 
     if not qurl.isValid() or qurl.scheme() not in ("http", "https"):
-        raise argparse.ArgumentTypeError(f"not a valid http(s) URL: {value!r}")
+        raise argparse.ArgumentTypeError("not a valid http(s) URL: {value!r}".format(value=value))
 
     return qurl.toString()
 
 
+def _write_cookiejar_stdout(payload: bytes) -> int:
+    """Write cookiejar bytes to stdout; return 1 when binary payload would hit a TTY."""
+
+    if cookietruck.utility.is_binary_cookiejar_payload(payload) and sys.stdout.isatty():
+        message = \
+            "error: cookiejar contains binary cookie data; redirect stdout (e.g. > cookies.txt)"
+        print(message, file=sys.stderr)
+
+        return 1
+
+    sys.stdout.buffer.write(payload)
+
+    return 0
+
+
 def main() -> int:
-    """Parse CLI flags, run Qt WebEngine, print JSON session payload; return process exit code."""
+    """Parse CLI flags, run Qt WebEngine, print session output; return process exit code."""
 
     # Argument definitions
 
     p = argparse.ArgumentParser(
         prog="ct_authenticate",
-        description="Load a URL in Qt WebEngine and print captured cookies as JSON.",
+        description=(
+            "Load a URL in Qt WebEngine and print captured cookies as JSON "
+            "or, with --as-curl-cookiejar, as a curl Netscape cookiejar."
+        ),
     )
     p.add_argument(
         "url",
@@ -97,8 +115,14 @@ def main() -> int:
         metavar="NAME",
         help=(
             "QWebEngineProfile storage name "
-            f"(default: {cookietruck.utility.PROFILE_STORAGE_NAME!r})."
+            "(default: {name!r}).".format(name=cookietruck.utility.PROFILE_STORAGE_NAME)
         ),
+    )
+    p.add_argument(
+        "--as-curl-cookiejar",
+        dest="as_curl_cookiejar",
+        action="store_true",
+        help="Print captured cookies as a curl Netscape cookiejar instead of JSON.",
     )
 
     # Parse and configure logging before any Qt noise
@@ -144,6 +168,7 @@ def main() -> int:
     # Mutable closure state: ensure ``dump_and_quit`` runs at most once.
 
     done = {"printed": False}
+    exit_code = {"value": 0}
 
     # Embedded browser plus bottom buttons (copy URL, explicit capture, then exit).
 
@@ -183,15 +208,30 @@ def main() -> int:
     layout.addLayout(btn_row)
 
     def dump_and_quit() -> None:
-        """Collect cookies, print JSON to stdout, close the UI, stop the Qt event loop."""
+        """Collect cookies, print session output to stdout, close the UI, stop the Qt event loop."""
 
         if done["printed"]:
             return
         done["printed"] = True
         cookies = cookietruck.utility.settle_then_collect(profile, cookie_map, args.settle_ms)
-        payload = cookietruck.utility.build_payload(base_url, cookies)
-        _LOGGER.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+        if args.as_curl_cookiejar:
+            if cookietruck.utility.are_cookies_binary_for_cookiejar(cookies) and sys.stdout.isatty():
+                message = \
+                    "error: cookiejar contains binary cookie data; redirect stdout (e.g. > cookies.txt)"
+                print(message, file=sys.stderr)
+                exit_code["value"] = 1
+            else:
+                payload = cookietruck.utility.build_curl_cookiejar(cookies)
+                _LOGGER.debug("emitting curl cookiejar with %d cookie records", len(cookies))
+                write_code = _write_cookiejar_stdout(payload)
+
+                if write_code != 0:
+                    exit_code["value"] = write_code
+        else:
+            payload = cookietruck.utility.build_payload(base_url, cookies)
+            _LOGGER.debug("emitting JSON payload with %d cookie records", len(payload["cookies"]))
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
 
         # WebEngine requires pages to be gone before their profile is released.
 
@@ -286,4 +326,8 @@ def main() -> int:
     # Run until ``dump_and_quit`` calls ``app.quit()``
 
     code = app.exec()
+
+    if exit_code["value"] != 0:
+        return exit_code["value"]
+
     return int(code) if code is not None else 0
