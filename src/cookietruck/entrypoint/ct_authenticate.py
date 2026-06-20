@@ -233,7 +233,7 @@ def main() -> int:
 
             _LOGGER.debug("initial focus: Done button (no web text control)")
 
-            capture_btn.setFocus(PySide6.QtCore.Qt.FocusReason.ActiveWindowReason)
+            capture_btn.setFocus(PySide6.QtCore.Qt.FocusReason.ActiveWindowFocusReason)
 
         def run_focus_script() -> None:
             """Defer to the next event-loop tick so the loaded document is ready for script."""
