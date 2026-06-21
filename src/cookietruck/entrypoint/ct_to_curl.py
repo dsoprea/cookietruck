@@ -26,19 +26,23 @@ def main() -> int:
 
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        print(f"error: invalid JSON: {e}", file=sys.stderr)
+    except json.JSONDecodeError as error:
+        message = "error: invalid JSON: {error}".format(error=error)
+        print(message, file=sys.stderr)
+
         return 1
 
     if not isinstance(data, dict):
         print("error: JSON root must be an object", file=sys.stderr)
+
         return 1
 
-    cookie_header = data.get("cookie_header")
-
-    if cookie_header is None:
+    if "cookie_header" not in data:
         print("error: missing cookie_header (not ct_authenticate output?)", file=sys.stderr)
+
         return 1
+
+    cookie_header = data["cookie_header"]
 
     if not isinstance(cookie_header, str):
         print("error: cookie_header must be a string", file=sys.stderr)

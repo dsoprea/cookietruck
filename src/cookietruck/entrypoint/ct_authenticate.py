@@ -40,11 +40,16 @@ _FOCUS_FIRST_TEXT_INPUT_JS = (
     "return false;})();"
 )
 
+_WINDOW_TITLE_TEMPLATE = "cookietruck — {url}"
+
 
 def _configure_logging(verbose: bool) -> None:
     """Attach stderr logging: WARNING by default, DEBUG when ``verbose`` is True."""
 
-    level = logging.DEBUG if verbose else logging.WARNING
+    if verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.WARNING
     logging.basicConfig(
         level=level,
         format="%(levelname)s %(name)s: %(message)s",
@@ -224,18 +229,17 @@ def main() -> int:
 
     container = PySide6.QtWidgets.QWidget()
     container.resize(1100, 720)
-    container.setWindowTitle("cookietruck — {url}".format(url=base_url))
+    container.setWindowTitle(_WINDOW_TITLE_TEMPLATE.format(url=base_url))
 
     def update_window_title_from_view(url: PySide6.QtCore.QUrl) -> None:
         """Keep the window title in sync with the active page URL (skip WebEngine placeholders)."""
 
-        if url.scheme() == "about":
-            path_lower = url.path().lower()
+        # Skip transient placeholder frames so the title does not flicker during load.
 
-            if path_lower in ("blank", "srcdoc"):
-                return
+        if cookietruck.utility.is_webengine_placeholder_url(url):
+            return
 
-        container.setWindowTitle("cookietruck — {url}".format(url=url.toString()))
+        container.setWindowTitle(_WINDOW_TITLE_TEMPLATE.format(url=url.toString()))
 
     view.urlChanged.connect(update_window_title_from_view)
 
@@ -369,11 +373,8 @@ def main() -> int:
 
         # Initial WebEngine placeholder frames fire ``loadFinished`` before the requested URL.
 
-        if loaded.scheme() == "about":
-            path_lower = loaded.path().lower()
-
-            if path_lower in ("blank", "srcdoc"):
-                return
+        if cookietruck.utility.is_webengine_placeholder_url(loaded):
+            return
 
         if focus_state["pending"]:
             return
@@ -416,4 +417,7 @@ def main() -> int:
     if exit_code["value"] != 0:
         return exit_code["value"]
 
-    return int(code) if code is not None else 0
+    if code is None:
+        return 0
+
+    return int(code)

@@ -51,6 +51,24 @@ def test_normalize_url_empty() -> None:
     assert not u.isValid()
 
 
+def test_is_webengine_placeholder_url_blank() -> None:
+    url = PySide6.QtCore.QUrl("about:blank")
+
+    assert cookietruck.utility.is_webengine_placeholder_url(url) is True
+
+
+def test_is_webengine_placeholder_url_srcdoc() -> None:
+    url = PySide6.QtCore.QUrl("about:srcdoc")
+
+    assert cookietruck.utility.is_webengine_placeholder_url(url) is True
+
+
+def test_is_webengine_placeholder_url_real_page() -> None:
+    url = PySide6.QtCore.QUrl("https://example.com/login")
+
+    assert cookietruck.utility.is_webengine_placeholder_url(url) is False
+
+
 def test_normalize_url_bare_host() -> None:
     u = cookietruck.utility.normalize_url("example.com")
     assert u.isValid()

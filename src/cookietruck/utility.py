@@ -31,6 +31,20 @@ def as_bytes(x: object) -> bytes:
     return bytes(x)
 
 
+def is_webengine_placeholder_url(url: PySide6.QtCore.QUrl) -> bool:
+    """Return True for transient ``about:blank`` / ``about:srcdoc`` WebEngine frames."""
+
+    if url.scheme() != "about":
+        return False
+
+    path_lower = url.path().lower()
+
+    if path_lower in ("blank", "srcdoc"):
+        return True
+
+    return False
+
+
 def normalize_url(text: str) -> PySide6.QtCore.QUrl:
     """Turn user input into an absolute ``QUrl``, defaulting scheme to ``https``."""
 
@@ -277,7 +291,7 @@ def cookie_header_for_url(
             continue
         name = as_bytes(c.name()).decode("utf-8", errors="replace")
         value = as_bytes(c.value()).decode("utf-8", errors="replace")
-        parts.append(f"{name}={value}")
+        parts.append("{name}={value}".format(name=name, value=value))
     return "; ".join(parts)
 
 
