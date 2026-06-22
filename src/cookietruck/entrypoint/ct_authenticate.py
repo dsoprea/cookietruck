@@ -125,13 +125,13 @@ def main() -> int:
         "--json-cookies-filepath",
         metavar="PATH",
         default=None,
-        help="JSON file from a prior ct_authenticate run; cookies are seeded before navigation.",
+        help="Seed the session with existing cookies from a prior ct_authenticate JSON file.",
     )
     seed_group.add_argument(
         "--curl-cookies-filepath",
         metavar="PATH",
         default=None,
-        help="curl Netscape cookiejar file; cookies are seeded before navigation.",
+        help="Seed the session with existing cookies from a curl Netscape cookiejar file.",
     )
 
     # Parse and configure logging before any Qt noise
