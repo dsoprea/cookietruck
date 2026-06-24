@@ -38,9 +38,19 @@ To publish those artifacts to PyPI (after configuring [twine](https://twine.read
 
 # Tools
 
-- `ct_authenticate`: Opens an embedded Chromium window to the given URL. The output should be redirected. Login as necessary and press the "Done" button.
+## `ct_authenticate`
 
-- `ct_to_curl`: Reads the JSON output from `ct_authenticate` and prints `curl` cookie arguments
+Opens an embedded Chromium window for the given URL. Log in as needed, then click **Quit and Dump Cookies** to print the session to stdout (redirect to a file). Optional flags include `--as-curl-cookiejar`, `--json-cookies-filepath`, and `--curl-cookies-filepath` for seeding or alternate export formats.
+
+![ct_authenticate main window](asset/documentation/image/ct-authenticate-main.png)
+
+The window title shows the current page URL. **Copy URL** copies it to the clipboard and briefly shows a confirmation overlay:
+
+![Copy URL confirmation](asset/documentation/image/ct-authenticate-copy-url.png)
+
+## `ct_to_curl`
+
+Reads JSON from `ct_authenticate` and prints `curl` cookie arguments (`-b` …).
 
 ## Example
 
